@@ -17,6 +17,7 @@ import select
 import signal
 import os
 
+VERSION = "1.0"
 
 class PcapWriter:
     """Minimal PCAP writer."""
@@ -316,7 +317,7 @@ class Shadowport:
             self.meta_log = MetadataLogger(self.log_path)
             self._log(f"[*] Metadata log: {self.log_path}")
         
-        self._log(f"[*] shadowport started")
+        self._log(f"[*] shadowport v{VERSION} started")
         self._log(f"[*] PCAP output: {self.pcap_path}")
 
         srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)

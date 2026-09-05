@@ -111,6 +111,30 @@ openssl s_client -connect 127.0.0.1:8443 -servername example.com
 
 Note: The PCAP will capture the Client Hello, Server Hello, Certificate exchange, and Key Exchange messages, allowing you to debug TLS configuration issues. But the traffic will remain encrypted.
 
+## C Implementation
+
+A standalone C version is available for environments without Python. It provides identical functionality with lower resource usage and no runtime dependencies.
+
+### Compilation
+
+Compile the source code into a static binary:
+
+```bash
+gcc -static -o shadowport shadowport.c -O2
+```
+
+### Usage
+
+Same as Python version, but the destination must be an IPv4 address. 
+
+```bash
+./shadowport -l 8080 -d 192.168.1.100 -p 80 -o capture.pcap
+```
+
+Hostname resolution and static linking do not work well together:
+
+> warning: Using 'getaddrinfo' in statically linked applications requires at runtime the shared libraries from the glibc version used for linking
+
 
 ## Limitations
 
