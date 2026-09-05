@@ -55,12 +55,14 @@ class MetadataLogger:
         self.file = open(filename, 'a')
         # Write header if file is new/empty
         if os.path.getsize(filename) == 0:
-            self.file.write("timestamp,client_ip,client_port,duration_sec,bytes_c2s,bytes_s2c\n")
+            self.file.write("timestamp,client_ip,client_port,dest_ip,dest_port,duration_sec,bytes_c2s,bytes_s2c,status\n")
             self.file.flush()
 
-    def log_connection(self, client_ip, client_port, duration, bytes_c2s, bytes_s2c):
+    def log_connection(self, client_ip, client_port, dest_ip, dest_port, duration, bytes_c2s, bytes_s2c, status="OK"):
         ts = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
-        line = f"{ts},{client_ip},{client_port},{duration:.2f},{bytes_c2s},{bytes_s2c}\n"
+        # Escape commas in status just in case
+        safe_status = str(status).replace(",", ";")
+        line = f"{ts},{client_ip},{client_port},{dest_ip},{dest_port},{duration:.2f},{bytes_c2s},{bytes_s2c},{safe_status}\n"
         self.file.write(line)
         self.file.flush()
 
@@ -165,30 +167,43 @@ class Shadowport:
         server_sock = None
         bytes_c2s = 0
         bytes_s2c = 0
+        status = "OK"
         
+        # Default dest values in case of early failure
+        dest_ip = self.dest_host
+        d_port = self.dest_port
+
+        # Resolve hostname once at the start
         try:
-            # Resolve hostname to IP for this specific connection
-            # This ensures the PCAP has a valid IP even if dest_host was a name
             addr_info = socket.getaddrinfo(self.dest_host, self.dest_port, socket.AF_INET, socket.SOCK_STREAM)
             if not addr_info:
                 raise Exception(f"Could not resolve {self.dest_host}")
-            
-            # Use the first available IPv4 address
             dest_ip = addr_info[0][4][0]
+        except Exception as e:
+            self._log(f"[!] DNS Resolution failed: {e}")
+            status = "DNS_ERROR"
+            if self.meta_log:
+                self.meta_log.log_connection(client_ip, client_port, dest_ip, d_port, time.time() - start_time, 0, 0, status)
+            client_sock.close()
+            return
+
+        d_host = dest_ip
+        
+        c_seq, s_seq = 1000, 2000
+
+        # Log SYN
+        self.log_packet(client_ip, d_host, client_port, d_port, c_seq, 0, 0x02, b'')
+        c_seq += 1
+
+        try:
+            server_sock = socket.create_connection((d_host, d_port), timeout=10)
+            self._log(f"[+] Connected to {self.dest_host} ({d_host}):{d_port}")
             
-            server_sock = socket.create_connection((dest_ip, self.dest_port), timeout=10)
-            self._log(f"[+] Connected to {self.dest_host} ({dest_ip}):{self.dest_port}")
-
-            d_host = dest_ip
-            d_port = self.dest_port
-
-            c_seq, s_seq = 1000, 2000
-
-            # Handshake
-            self.log_packet(client_ip, d_host, client_port, d_port, c_seq, 0, 0x02, b'')
-            c_seq += 1
+            # Log SYN-ACK
             self.log_packet(d_host, client_ip, d_port, client_port, s_seq, c_seq, 0x12, b'')
             s_seq += 1
+            
+            # Log ACK
             self.log_packet(client_ip, d_host, client_port, d_port, c_seq, s_seq, 0x10, b'')
 
             client_sock.setblocking(False)
@@ -206,32 +221,54 @@ class Shadowport:
                     is_client = (s is client_sock)
                     peer = server_sock if is_client else client_sock
                     
+                    reset = False
                     try:
                         data = s.recv(65535)
-                    except (ConnectionResetError, OSError):
+                    except ConnectionResetError:
+                        reset = True
+                        data = b''
+                    except OSError:
                         data = b''
                     
                     if not data:
-                        self._log(f"[-] {'Client' if is_client else 'Server'} closed connection")
+                        side = 'Client' if is_client else 'Server'
                         
-                        if is_client:
-                            self.log_packet(client_ip, d_host, client_port, d_port, c_seq, s_seq, 0x01, b'')
-                            c_seq += 1
+                        if reset:
+                            self._log(f"[-] {side} sent RST")
+                            status = "RST"
+                            if is_client:
+                                self.log_packet(client_ip, d_host, client_port, d_port, c_seq, s_seq, 0x04, b'')
+                            else:
+                                self.log_packet(d_host, client_ip, d_port, client_port, s_seq, c_seq, 0x04, b'')
+                            
+                            # Immediate cleanup on RST
+                            for sock in [client_sock, server_sock]:
+                                if sock:
+                                    try: sock.close()
+                                    except: pass
+                            # Break loop to go to finally block
+                            sockets.clear() 
+                            break
                         else:
-                            self.log_packet(d_host, client_ip, d_port, client_port, s_seq, c_seq, 0x01, b'')
-                            s_seq += 1
+                            self._log(f"[-] {side} closed connection (FIN)")
+                            if is_client:
+                                self.log_packet(client_ip, d_host, client_port, d_port, c_seq, s_seq, 0x01, b'')
+                                c_seq += 1
+                            else:
+                                self.log_packet(d_host, client_ip, d_port, client_port, s_seq, c_seq, 0x01, b'')
+                                s_seq += 1
 
-                        try:
-                            peer.shutdown(socket.SHUT_WR)
-                        except:
-                            pass
-                        
-                        if s in sockets:
-                            sockets.remove(s)
-                        
-                        if not sockets:
-                            return
-                        continue
+                            try:
+                                peer.shutdown(socket.SHUT_WR)
+                            except:
+                                pass
+                            
+                            if s in sockets:
+                                sockets.remove(s)
+                            
+                            if not sockets:
+                                break
+                            continue
 
                     try:
                         peer.sendall(data)
@@ -247,12 +284,21 @@ class Shadowport:
                         s_seq += len(data)
                         bytes_s2c += len(data)
 
+        except (ConnectionRefusedError, OSError) as e:
+            # Handle connection failure (e.g., port closed)
+            self._log(f"[!] Connection to {d_host}:{d_port} failed: {e}")
+            status = "REFUSED"
+            
+            # Log RST from Server side because it refused the connection
+            self.log_packet(d_host, client_ip, d_port, client_port, s_seq, c_seq, 0x04, b'')
+            
         except Exception as e:
             self._log(f"[!] Error handling connection: {e}")
+            status = f"ERROR: {str(e)[:20]}"
         finally:
             duration = time.time() - start_time
             if self.meta_log:
-                self.meta_log.log_connection(client_ip, client_port, duration, bytes_c2s, bytes_s2c)
+                self.meta_log.log_connection(client_ip, client_port, dest_ip, d_port, duration, bytes_c2s, bytes_s2c, status)
             
             for s in [server_sock, client_sock]:
                 if s:
@@ -260,7 +306,7 @@ class Shadowport:
                         s.close()
                     except:
                         pass
-            self._log(f"[*] Connection finished ({duration:.2f}s)")
+            self._log(f"[*] Connection finished ({duration:.2f}s) [{status}]")
 
     def run(self):
         self.pcap = PcapWriter(self.pcap_path)
@@ -322,7 +368,7 @@ def main():
     p.add_argument('-p', '--dest-port', type=int, required=True, help='Destination port')
     p.add_argument('-o', '--output', default='shadowport.pcap', help='PCAP file')
     p.add_argument('--log', default=None, help='Metadata log file (optional)')
-    p.add_argument('--listen-host', default='0.0.0.0', help='Bind address')
+    p.add_argument('--listen-host', default='127.0.0.1', help='Bind address')
     p.add_argument('-q', '--quiet', action='store_true', help='Run silently (no console output)')
     args = p.parse_args()
 

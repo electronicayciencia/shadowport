@@ -2,11 +2,27 @@
 
 An user-space TCP packet capture tool. 
 
-shadowport is a transparent TCP capturing tunnel. It allows you to intercept and log traffic to a PCAP file for Wireshark analysis without root access.
+shadowport is a transparent TCP capturing tunnel. It allows you to log traffic from/to one port to a PCAP file without root access.
 
 ## Usage
 
-No installation. Single python file with no dependencies.
+Configure shadowport to listen on a local port and forward traffic to the target server.
+
+```text
+   Client App             Shadowport                Server
+┌────────────────┐      ┌────────────┐       ┌─────────────┐
+│                │      │            │       │             │
+│    curl to     │ 4430 │  Forward   │  443  │ example.com │
+│ 127.0.0.1:4430 │─────►│   & log    │──────►│             │
+│                │◄─────│            │◄──────│             │
+└────────────────┘      └──────┬─────┘       └─────────────┘
+                               │
+                          ┌────▼───┐
+                          │ .pcap  │
+                          └────────┘
+```
+
+No installation. Single python file, no dependencies.
 
 ### Basic Syntax
 
@@ -23,7 +39,7 @@ python shadowport.py -l <local_port> -d <dest_host> -p <dest_port> [options]
 | `--dest-port` | `-p` | Destination port. | Yes |
 | `--output` | `-o` | Output PCAP file path. Default: `shadowport.pcap`. | No |
 | `--log` | | Path for metadata log file. If omitted, no log is created. | No |
-| `--listen-host` | | Local bind address. Default: `0.0.0.0`. | No |
+| `--listen-host` | | Local bind address. Default: `127.0.0.1`. | No |
 | `--quiet` | `-q` | Run silently. Suppresses console output. | No |
 
 ## Examples
@@ -98,10 +114,12 @@ Note: The PCAP will capture the Client Hello, Server Hello, Certificate exchange
 
 ## Limitations
 
-- The Ethernet, IP, and TCP headers in the PCAP are fake. They contain correct sequence numbers and checksums for Wireshark reassembly but do not reflect physical network status (TTL, MAC addresses, etc.) nor actual TCP/IP frames (RST, FIN, ACK). Only the TCP payload is truly captured from the application.
+- Only the TCP payload is captured from the application.
+- Control flags (RST, FIN, ACK) are logged to match the connection state. 
+- The Ethernet, IP, and TCP headers are synthetic. They use correct sequence numbers for Wireshark physical details like TTL or MAC addresses are fake.
 - Each instance handles one client connection at a time.
 - UDP traffic not supported.
 
 ## License
 
-This project is provided as-is for educational and debugging purposes.
+This project is provided as is for educational and debugging purposes.
