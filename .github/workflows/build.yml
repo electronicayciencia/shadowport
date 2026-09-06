@@ -76,6 +76,19 @@ jobs:
       - name: Download all artifacts
         uses: actions/download-artifact@v4
 
+      - name: Prepare binaries
+        run: |
+          # Move binaries from subdirectories to root for easier handling
+          mv shadowport-linux-x64/shadowport-linux-x64 .
+          mv shadowport-armv5/shadowport-armv5 .
+          mv shadowport-armv7/shadowport-armv7 .
+          
+          # Make them executable
+          chmod +x shadowport-linux-x64 shadowport-armv5 shadowport-armv7
+          
+          # List files to verify
+          ls -lh shadowport-*
+
       - name: Create or Update "latest" Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -90,16 +103,12 @@ jobs:
             echo "Updating existing 'latest' release..."
           fi
 
-          # Delete existing assets to avoid conflicts
-          for asset in shadowport-linux-x64 shadowport-armv5 shadowport-armv7; do
-            ASSET_ID=$(gh release view latest --json assets --jq ".assets[] | select(.name == \"$asset\") | .id" 2>/dev/null || echo "")
-            if [ ! -z "$ASSET_ID" ]; then
-              echo "Deleting old asset: $asset"
-              gh api repos/${{ github.repository }}/releases/assets/$ASSET_ID -X DELETE
-            fi
-          done
-
-          # Upload new assets
-          gh release upload latest shadowport-linux-x64/shadowport-linux-x64 --clobber
-          gh release upload latest shadowport-armv5/shadowport-armv5 --clobber
-          gh release upload latest shadowport-armv7/shadowport-armv7 --clobber
+          # Upload new assets using --clobber to replace existing ones
+          echo "Uploading shadowport-linux-x64..."
+          gh release upload latest shadowport-linux-x64 --clobber
+          
+          echo "Uploading shadowport-armv5..."
+          gh release upload latest shadowport-armv5 --clobber
+          
+          echo "Uploading shadowport-armv7..."
+          gh release upload latest shadowport-armv7 --clobber
