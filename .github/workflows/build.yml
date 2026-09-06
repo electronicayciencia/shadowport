@@ -78,21 +78,26 @@ jobs:
 
       - name: Prepare binaries
         run: |
-          # Move binaries from subdirectories to root for easier handling
-          mv shadowport-linux-x64/shadowport-linux-x64 .
-          mv shadowport-armv5/shadowport-armv5 .
-          mv shadowport-armv7/shadowport-armv7 .
+          # Create a clean directory for staging
+          mkdir -p release-staging
+          
+          # Move binaries from artifact subdirectories to staging
+          cp shadowport-linux-x64/shadowport-linux-x64 release-staging/
+          cp shadowport-armv5/shadowport-armv5 release-staging/
+          cp shadowport-armv7/shadowport-armv7 release-staging/
           
           # Make them executable
-          chmod +x shadowport-linux-x64 shadowport-armv5 shadowport-armv7
+          chmod +x release-staging/shadowport-*
           
           # List files to verify
-          ls -lh shadowport-*
+          ls -lh release-staging/
 
       - name: Create or Update "latest" Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          cd release-staging
+          
           # Check if "latest" release exists
           RELEASE_ID=$(gh release view latest --json id --jq '.id' 2>/dev/null || echo "")
 
