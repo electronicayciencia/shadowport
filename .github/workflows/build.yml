@@ -2,29 +2,50 @@ name: Build Shadowport
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ "master" ]
   pull_request:
-    branches: [ "main" ]
+    branches: [ "master" ]
   workflow_dispatch:
 
 jobs:
-  build-linux:
+  build:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - arch: linux-x64
+            image: alpine:latest
+            cc: gcc
+            flags: -static -DENABLE_DNS
+          - arch: linux-x86
+            image: i386/alpine:latest
+            cc: gcc
+            flags: -static -DENABLE_DNS
+          - arch: linux-armv5
+            image: arm32v5/alpine:latest
+            cc: gcc
+            flags: -static -DENABLE_DNS
+          - arch: linux-armv7
+            image: arm32v7/alpine:latest
+            cc: gcc
+            flags: -static -DENABLE_DNS
+
+    container: ${{ matrix.image }}
 
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
 
-    - name: Install musl-tools
-      run: sudo apt-get update && sudo apt-get install -y musl-tools
+    - name: Install build dependencies
+      run: apk add --no-cache gcc musl-dev make
 
-    - name: Compile Static Binary (with DNS)
+    - name: Compile Static Binary
       run: |
-        musl-gcc -static -DENABLE_DNS -o shadowport-linux-x64 shadowport.c -O2
-        echo "Binary size: $(du -h shadowport-linux-x64 | cut -f1)"
+        ${{ matrix.cc }} ${{ matrix.flags }} -o shadowport-${{ matrix.arch }} shadowport.c -O2
+        echo "Binary size: $(du -h shadowport-${{ matrix.arch }} | cut -f1)"
 
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: shadowport-linux-x64
-        path: shadowport-linux-x64
+        name: shadowport-${{ matrix.arch }}
+        path: shadowport-${{ matrix.arch }}
