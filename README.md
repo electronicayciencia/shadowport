@@ -4,6 +4,9 @@ User-space TCP packet capture tool.
 
 shadowport is a transparent TCP capturing tunnel. It allows you to log traffic from/to one port to a PCAP file without root access.
 
+Python and C implementations available. Standalone, no installation, single file, no dependencies.
+
+
 ## Usage
 
 Configure shadowport to listen on a local port and forward traffic to the target server.
@@ -21,8 +24,6 @@ Configure shadowport to listen on a local port and forward traffic to the target
                           │ .pcap  │
                           └────────┘
 ```
-
-No installation. Single python file, no dependencies.
 
 ### Basic Syntax
 
@@ -114,19 +115,19 @@ Note the PCAP will capture the Client Hello, Server Hello, Certificate exchange,
 
 ### 6. Inter-Host Traffic Capture (Man-in-the-Middle)
 
-Use `shadowport` on a third host to intercept and log traffic between two different machines. Requires binding to `0.0.0.0` so the tunnel is accessible from the network.
+Use `shadowport` on a third host to intercept and log traffic between two machines.
 
 - Host A (Client) on `192.168.1.10`
 - Host B (Shadowport) on `192.168.1.50`
 - Host C (Server) on `192.168.1.100`
 
-Start *shadowport* listening on all interfaces an pointing to the target server:
+Start *shadowport* listening on all interfaces, forwarding to the target server:
 
 ```bash
 python shadowport.py -l 8080 -d 192.168.1.100 -p 80 -b 0.0.0.0 -o inter_host.pcap
 ```
 
-Configure your application on host A to connect to host B (and *shadowport* listening port)  instead of the actual server:
+Configure host A client to connect to host B IP and port, not to host C server:
 
 ```bash
 curl http://192.168.1.50:8080
@@ -173,10 +174,15 @@ Example:
 ./shadowport -l 8080 -d 192.168.1.100 -p 80 -o capture.pcap
 ```
 
+## Pre-compiled Binaries
+
+Go to the Releases page.
+
+Note: ARM builds do not support hostname resolution.
+
 
 ## Limitations
 
-- Only the TCP payload is captured from the application.
 - Control flags (RST, FIN, ACK) are logged to match the connection state. 
 - The Ethernet, IP, and TCP headers are synthetic. They use correct sequence numbers for Wireshark physical details like TTL or MAC addresses are fake.
 - Each instance handles one client connection at a time.
