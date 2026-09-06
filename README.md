@@ -1,6 +1,6 @@
 # Shadow Port
 
-An user-space TCP packet capture tool. 
+User-space TCP packet capture tool. 
 
 shadowport is a transparent TCP capturing tunnel. It allows you to log traffic from/to one port to a PCAP file without root access.
 
