@@ -87,7 +87,7 @@ def ip_checksum(data: bytes) -> int:
 def build_packet(src_mac, dst_mac, src_ip, dst_ip,
                  src_port, dst_port, seq, ack, flags, payload, ip_id):
     """Build Ethernet+IP+TCP frame."""
-    
+
     # --- TCP Header ---
     tcp_hdr_no_cksum = struct.pack('!HHIIBBHHH',
         src_port, dst_port, seq, ack,
@@ -148,7 +148,7 @@ class Shadowport:
             src_mac, dst_mac = self.SERVER_MAC, self.CLIENT_MAC
         else:
             src_mac, dst_mac = self.CLIENT_MAC, self.SERVER_MAC
-            
+
         frame = build_packet(
             src_mac, dst_mac,
             src_ip, dst_ip,
@@ -162,14 +162,14 @@ class Shadowport:
         client_ip = client_addr[0]
         client_port = client_addr[1]
         start_time = time.time()
-        
+
         self._log(f"[+] Connection from {client_ip}:{client_port}")
-        
+
         server_sock = None
         bytes_c2s = 0
         bytes_s2c = 0
         status = "OK"
-        
+
         # Default dest values in case of early failure
         dest_ip = self.dest_host
         d_port = self.dest_port
@@ -189,7 +189,7 @@ class Shadowport:
             return
 
         d_host = dest_ip
-        
+
         c_seq, s_seq = 1000, 2000
 
         # Log SYN
@@ -199,11 +199,11 @@ class Shadowport:
         try:
             server_sock = socket.create_connection((d_host, d_port), timeout=10)
             self._log(f"[+] Connected to {self.dest_host} ({d_host}):{d_port}")
-            
+
             # Log SYN-ACK
             self.log_packet(d_host, client_ip, d_port, client_port, s_seq, c_seq, 0x12, b'')
             s_seq += 1
-            
+
             # Log ACK
             self.log_packet(client_ip, d_host, client_port, d_port, c_seq, s_seq, 0x10, b'')
 
@@ -211,17 +211,17 @@ class Shadowport:
             server_sock.setblocking(False)
 
             sockets = [client_sock, server_sock]
-            
+
             while self.running:
                 try:
                     readable, _, _ = select.select(sockets, [], [], 1.0)
                 except (ValueError, OSError):
-                    break 
+                    break
 
                 for s in readable:
                     is_client = (s is client_sock)
                     peer = server_sock if is_client else client_sock
-                    
+
                     reset = False
                     try:
                         data = s.recv(65535)
@@ -230,10 +230,10 @@ class Shadowport:
                         data = b''
                     except OSError:
                         data = b''
-                    
+
                     if not data:
                         side = 'Client' if is_client else 'Server'
-                        
+
                         if reset:
                             self._log(f"[-] {side} sent RST")
                             status = "RST"
@@ -241,14 +241,14 @@ class Shadowport:
                                 self.log_packet(client_ip, d_host, client_port, d_port, c_seq, s_seq, 0x04, b'')
                             else:
                                 self.log_packet(d_host, client_ip, d_port, client_port, s_seq, c_seq, 0x04, b'')
-                            
+
                             # Immediate cleanup on RST
                             for sock in [client_sock, server_sock]:
                                 if sock:
                                     try: sock.close()
                                     except: pass
                             # Break loop to go to finally block
-                            sockets.clear() 
+                            sockets.clear()
                             break
                         else:
                             self._log(f"[-] {side} closed connection (FIN)")
@@ -263,10 +263,10 @@ class Shadowport:
                                 peer.shutdown(socket.SHUT_WR)
                             except:
                                 pass
-                            
+
                             if s in sockets:
                                 sockets.remove(s)
-                            
+
                             if not sockets:
                                 break
                             continue
@@ -289,10 +289,10 @@ class Shadowport:
             # Handle connection failure (e.g., port closed)
             self._log(f"[!] Connection to {d_host}:{d_port} failed: {e}")
             status = "REFUSED"
-            
+
             # Log RST from Server side because it refused the connection
             self.log_packet(d_host, client_ip, d_port, client_port, s_seq, c_seq, 0x04, b'')
-            
+
         except Exception as e:
             self._log(f"[!] Error handling connection: {e}")
             status = f"ERROR: {str(e)[:20]}"
@@ -300,7 +300,7 @@ class Shadowport:
             duration = time.time() - start_time
             if self.meta_log:
                 self.meta_log.log_connection(client_ip, client_port, dest_ip, d_port, duration, bytes_c2s, bytes_s2c, status)
-            
+
             for s in [server_sock, client_sock]:
                 if s:
                     try:
@@ -311,12 +311,12 @@ class Shadowport:
 
     def run(self):
         self.pcap = PcapWriter(self.pcap_path)
-        
+
         # Initialize metadata logger only if a path is provided
         if self.log_path:
             self.meta_log = MetadataLogger(self.log_path)
             self._log(f"[*] Metadata log: {self.log_path}")
-        
+
         self._log(f"[*] shadowport v{VERSION} started")
         self._log(f"[*] PCAP output: {self.pcap_path}")
 
@@ -325,7 +325,7 @@ class Shadowport:
         srv.bind((self.listen_host, self.listen_port))
         srv.listen(1)
         srv.settimeout(1.0)
-        
+
         self._log(f"[*] Listening on {self.listen_host}:{self.listen_port} -> {self.dest_host}:{self.dest_port}")
         if not self.quiet:
             print("[*] Press Ctrl+C to stop")
@@ -358,7 +358,7 @@ def signal_handler(sig, frame):
 def main():
     # Handle SIGTERM (Unix/Linux/Docker)
     signal.signal(signal.SIGTERM, signal_handler)
-    
+
     # Handle SIGHUP only if available (Unix/Linux, not Windows)
     if hasattr(signal, 'SIGHUP'):
         signal.signal(signal.SIGHUP, signal_handler)
@@ -369,16 +369,16 @@ def main():
     p.add_argument('-p', '--dest-port', type=int, required=True, help='Destination port')
     p.add_argument('-o', '--output', default='shadowport.pcap', help='PCAP file')
     p.add_argument('--log', default=None, help='Metadata log file (optional)')
-    p.add_argument('--listen-host', default='127.0.0.1', help='Bind address')
+    p.add_argument('-b', '--bind-host', default='127.0.0.1', help='Bind address (default: 127.0.0.1)')
     p.add_argument('-q', '--quiet', action='store_true', help='Run silently (no console output)')
     args = p.parse_args()
 
     tunnel = Shadowport(
-        args.listen_host, 
-        args.listen_port, 
-        args.dest_host, 
-        args.dest_port, 
-        args.output, 
+        args.bind_host,
+        args.listen_port,
+        args.dest_host,
+        args.dest_port,
+        args.output,
         args.log,
         args.quiet
     )
