@@ -78,27 +78,20 @@ jobs:
 
       - name: Prepare binaries
         run: |
-          # Create a clean directory for staging
           mkdir -p release-staging
-          
-          # Move binaries from artifact subdirectories to staging
           cp shadowport-linux-x64/shadowport-linux-x64 release-staging/
           cp shadowport-armv5/shadowport-armv5 release-staging/
           cp shadowport-armv7/shadowport-armv7 release-staging/
-          
-          # Make them executable
           chmod +x release-staging/shadowport-*
-          
-          # List files to verify
           ls -lh release-staging/
 
       - name: Create or Update "latest" Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
         run: |
           cd release-staging
           
-          # Check if "latest" release exists
           RELEASE_ID=$(gh release view latest --json id --jq '.id' 2>/dev/null || echo "")
 
           if [ -z "$RELEASE_ID" ]; then
@@ -108,7 +101,6 @@ jobs:
             echo "Updating existing 'latest' release..."
           fi
 
-          # Upload new assets using --clobber to replace existing ones
           echo "Uploading shadowport-linux-x64..."
           gh release upload latest shadowport-linux-x64 --clobber
           
