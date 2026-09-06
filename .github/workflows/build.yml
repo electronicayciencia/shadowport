@@ -28,29 +28,6 @@ jobs:
         name: shadowport-linux-x64
         path: shadowport-linux-x64
 
-  build-linux-x86:
-    runs-on: ubuntu-latest
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-
-    - name: Install musl-tools (32-bit)
-      run: |
-        sudo dpkg --add-architecture i386
-        sudo apt-get update
-        sudo apt-get install -y musl-tools libc6-dev-i386 linux-libc-dev:i386
-
-    - name: Compile Static Binary (x86 with DNS)
-      run: |
-        musl-gcc -static -m32 -DENABLE_DNS -o shadowport-linux-x86 shadowport.c -O2
-        echo "Binary size: $(du -h shadowport-linux-x86 | cut -f1)"
-
-    - name: Upload Artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: shadowport-linux-x86
-        path: shadowport-linux-x86
-
   build-armv5:
     runs-on: ubuntu-latest
     steps:
