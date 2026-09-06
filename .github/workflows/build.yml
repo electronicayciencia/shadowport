@@ -67,3 +67,39 @@ jobs:
       with:
         name: shadowport-armv7
         path: shadowport-armv7
+
+  update-release:
+    needs: [build-linux-x64, build-armv5, build-armv7]
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+
+      - name: Create or Update "latest" Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Check if "latest" release exists
+          RELEASE_ID=$(gh release view latest --json id --jq '.id' 2>/dev/null || echo "")
+
+          if [ -z "$RELEASE_ID" ]; then
+            echo "Creating new 'latest' release..."
+            gh release create latest --title "Latest Build" --notes "Automated build from master branch." --prerelease
+          else
+            echo "Updating existing 'latest' release..."
+          fi
+
+          # Delete existing assets to avoid conflicts
+          for asset in shadowport-linux-x64 shadowport-armv5 shadowport-armv7; do
+            ASSET_ID=$(gh release view latest --json assets --jq ".assets[] | select(.name == \"$asset\") | .id" 2>/dev/null || echo "")
+            if [ ! -z "$ASSET_ID" ]; then
+              echo "Deleting old asset: $asset"
+              gh api repos/${{ github.repository }}/releases/assets/$ASSET_ID -X DELETE
+            fi
+          done
+
+          # Upload new assets
+          gh release upload latest shadowport-linux-x64/shadowport-linux-x64 --clobber
+          gh release upload latest shadowport-armv5/shadowport-armv5 --clobber
+          gh release upload latest shadowport-armv7/shadowport-armv7 --clobber
