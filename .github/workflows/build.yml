@@ -17,7 +17,7 @@ jobs:
     - name: Install musl-tools
       run: sudo apt-get update && sudo apt-get install -y musl-tools
 
-    - name: Compile Static Binary (x64)
+    - name: Compile Static Binary (x64 with DNS)
       run: |
         musl-gcc -static -DENABLE_DNS -o shadowport-linux-x64 shadowport.c -O2
         echo "Binary size: $(du -h shadowport-linux-x64 | cut -f1)"
@@ -34,13 +34,15 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
 
-    - name: Install cross-compile tools
-      run: sudo apt-get update && sudo apt-get install -y musl-tools gcc-i686-linux-gnu
-
-    - name: Compile Static Binary (x86 32-bit)
+    - name: Install musl-tools (32-bit)
       run: |
-        # Use i686-linux-gnu-gcc with musl static linking
-        i686-linux-gnu-gcc -static -DENABLE_DNS -o shadowport-linux-x86 shadowport.c -O2
+        sudo dpkg --add-architecture i386
+        sudo apt-get update
+        sudo apt-get install -y musl-tools libc6-dev-i386 linux-libc-dev:i386
+
+    - name: Compile Static Binary (x86 with DNS)
+      run: |
+        musl-gcc -static -m32 -DENABLE_DNS -o shadowport-linux-x86 shadowport.c -O2
         echo "Binary size: $(du -h shadowport-linux-x86 | cut -f1)"
 
     - name: Upload Artifact
@@ -55,13 +57,12 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
 
-    - name: Install cross-compile tools
+    - name: Install ARM Cross-Compiler
       run: sudo apt-get update && sudo apt-get install -y gcc-arm-linux-gnueabi
 
-    - name: Compile Static Binary (ARMv5)
+    - name: Compile Static Binary (ARMv5 No DNS)
       run: |
-        # ARMv5 uses soft-float (gnueabi)
-        arm-linux-gnueabi-gcc -static -DENABLE_DNS -o shadowport-armv5 shadowport.c -O2
+        arm-linux-gnueabi-gcc -static -march=armv5te -o shadowport-armv5 shadowport.c -O2
         echo "Binary size: $(du -h shadowport-armv5 | cut -f1)"
 
     - name: Upload Artifact
@@ -76,13 +77,12 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
 
-    - name: Install cross-compile tools
+    - name: Install ARM Cross-Compiler
       run: sudo apt-get update && sudo apt-get install -y gcc-arm-linux-gnueabihf
 
-    - name: Compile Static Binary (ARMv7)
+    - name: Compile Static Binary (ARMv7 No DNS)
       run: |
-        # ARMv7 usually uses hard-float (gnueabihf)
-        arm-linux-gnueabihf-gcc -static -DENABLE_DNS -o shadowport-armv7 shadowport.c -O2
+        arm-linux-gnueabihf-gcc -static -march=armv7-a -mfpu=vfpv3-d16 -mfloat-abi=hard -o shadowport-armv7 shadowport.c -O2
         echo "Binary size: $(du -h shadowport-armv7 | cut -f1)"
 
     - name: Upload Artifact
