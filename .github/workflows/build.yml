@@ -1,0 +1,29 @@
+name: Build Shadowport
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build-linux:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Install musl-tools
+      run: sudo apt-get update && sudo apt-get install -y musl-tools
+
+    - name: Compile Static Binary (with DNS)
+      run: |
+        musl-gcc -static -DENABLE_DNS -o shadowport-linux-x64 shadowport.c -O2
+        echo "Binary size: $(du -h shadowport-linux-x64 | cut -f1)"
+
+    - name: Upload Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: shadowport-linux-x64
+        path: shadowport-linux-x64
