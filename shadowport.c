@@ -1,3 +1,4 @@
+#define _POSIX_C_SOURCE 200809L
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -10,23 +11,23 @@
 #include <time.h>
 #include <fcntl.h>
 #include <sys/select.h>
+#include <sys/time.h>
 
-#define VERSION "1.0"
+#ifdef ENABLE_DNS
+#include <netdb.h>
+#endif
 
 #define BUFFER_SIZE 65535
 #define PCAP_MAGIC 0xa1b2c3d4
 #define CLIENT_MAC "\x00\x11\x22\x33\x44\x55"
 #define SERVER_MAC "\x66\x77\x88\x99\xaa\xbb"
+#define VERSION "1.0"
 
 // Global flag for signal handling
 volatile sig_atomic_t running = 1;
-int wakeup_pipe[2]; // Pipe to wake up select
 
 void handle_signal(int sig) {
     running = 0;
-    // Write to pipe to interrupt select immediately
-    char c = 'x';
-    write(wakeup_pipe[1], &c, 1);
 }
 
 // --- PCAP Structures ---
@@ -252,7 +253,7 @@ void log_meta(const char *client_ip, int client_port, const char *dest_ip, int d
 // --- Main Logic ---
 
 void handle_client(int client_fd, struct sockaddr_in *client_addr, 
-                   const char *dest_ip_str, int dest_port, 
+                   const char *dest_host_str, int dest_port, 
                    const char *pcap_path, const char *meta_path) {
     
     char client_ip_str[INET_ADDRSTRLEN];
@@ -261,6 +262,40 @@ void handle_client(int client_fd, struct sockaddr_in *client_addr,
     
     printf("[+] Connection from %s:%d\n", client_ip_str, client_port);
     
+    char dest_ip_str[INET_ADDRSTRLEN];
+    struct in_addr dest_ip_addr;
+
+#ifdef ENABLE_DNS
+    // Resolve Destination using getaddrinfo
+    struct addrinfo hints, *res;
+    memset(&hints, 0, sizeof(hints));
+    hints.ai_family = AF_INET;
+    hints.ai_socktype = SOCK_STREAM;
+    
+    char port_str[6];
+    snprintf(port_str, sizeof(port_str), "%d", dest_port);
+    
+    if (getaddrinfo(dest_host_str, port_str, &hints, &res) != 0) {
+        fprintf(stderr, "[!] DNS Resolution failed for %s\n", dest_host_str);
+        log_meta(client_ip_str, client_port, dest_host_str, dest_port, 0, 0, 0, "DNS_ERROR");
+        close(client_fd);
+        return;
+    }
+    
+    struct sockaddr_in *p = (struct sockaddr_in *)res->ai_addr;
+    dest_ip_addr = p->sin_addr;
+    inet_ntop(AF_INET, &dest_ip_addr, dest_ip_str, INET_ADDRSTRLEN);
+    freeaddrinfo(res);
+#else
+    // Use raw IP
+    if (inet_pton(AF_INET, dest_host_str, &dest_ip_addr) != 1) {
+        fprintf(stderr, "[!] Invalid destination IP format. Hostnames not supported in this build.\n");
+        close(client_fd);
+        return;
+    }
+    strncpy(dest_ip_str, dest_host_str, INET_ADDRSTRLEN);
+#endif
+
     int server_fd = socket(AF_INET, SOCK_STREAM, 0);
     if (server_fd < 0) {
         perror("Socket creation failed");
@@ -271,21 +306,19 @@ void handle_client(int client_fd, struct sockaddr_in *client_addr,
     // Log SYN
     log_packet(client_ip_str, dest_ip_str, client_port, dest_port, 1000, 0, 0x02, NULL, 0, 0);
     
-    // Prepare server address
+    // Connect
     struct sockaddr_in server_addr;
     memset(&server_addr, 0, sizeof(server_addr));
     server_addr.sin_family = AF_INET;
     server_addr.sin_port = htons(dest_port);
-    server_addr.sin_addr.s_addr = inet_addr(dest_ip_str);
+    server_addr.sin_addr = dest_ip_addr;
     
     // Set server socket to non-blocking for connect()
     fcntl(server_fd, F_SETFL, O_NONBLOCK);
     
-    // Attempt connect (will return -1 with EINPROGRESS)
     int conn_res = connect(server_fd, (struct sockaddr *)&server_addr, sizeof(server_addr));
     
     if (conn_res < 0 && errno != EINPROGRESS) {
-        // Immediate error (e.g., network unreachable)
         perror("[!] Connection failed immediately");
         log_packet(dest_ip_str, client_ip_str, dest_port, client_port, 2000, 1001, 0x04, NULL, 0, 1);
         log_meta(client_ip_str, client_port, dest_ip_str, dest_port, 0, 0, 0, "REFUSED");
@@ -308,7 +341,6 @@ void handle_client(int client_fd, struct sockaddr_in *client_addr,
     int activity = select(server_fd + 1, NULL, &writefds, NULL, &timeout);
     
     if (activity <= 0) {
-        // Timeout or Error
         if (!running) {
             printf("\n[*] Interrupted during connection\n");
         } else {
@@ -335,10 +367,7 @@ void handle_client(int client_fd, struct sockaddr_in *client_addr,
         return;
     }
     
-    printf("[+] Connected to %s:%d\n", dest_ip_str, dest_port);
-    
-    // Set back to non-blocking for data transfer
-    // (It's already non-blocking, but good to be explicit about state)
+    printf("[+] Connected to %s (%s):%d\n", dest_host_str, dest_ip_str, dest_port);
     
     // Log SYN-ACK and ACK
     log_packet(dest_ip_str, client_ip_str, dest_port, client_port, 2000, 1001, 0x12, NULL, 0, 1);
@@ -442,42 +471,68 @@ void handle_client(int client_fd, struct sockaddr_in *client_addr,
 
 int main(int argc, char *argv[]) {
     int listen_port = 0;
-    char *dest_ip = NULL;
+    char *dest_host = NULL;
     int dest_port = 0;
     char *output_file = "shadowport.pcap";
     char *log_file = NULL;
     char *listen_host = "127.0.0.1";
     int quiet = 0;
     
-    for (int i = 1; i < argc; i++) {
-        if (strcmp(argv[i], "-l") == 0 && i + 1 < argc) listen_port = atoi(argv[++i]);
-        else if (strcmp(argv[i], "-d") == 0 && i + 1 < argc) dest_ip = argv[++i];
-        else if (strcmp(argv[i], "-p") == 0 && i + 1 < argc) dest_port = atoi(argv[++i]);
-        else if (strcmp(argv[i], "-o") == 0 && i + 1 < argc) output_file = argv[++i];
-        else if (strcmp(argv[i], "--log") == 0 && i + 1 < argc) log_file = argv[++i];
-        else if (strcmp(argv[i], "--listen-host") == 0 && i + 1 < argc) listen_host = argv[++i];
-        else if (strcmp(argv[i], "-q") == 0) quiet = 1;
-    }
-    
-    if (!listen_port || !dest_ip || !dest_port) {
-        fprintf(stderr, "Usage: %s -l <port> -d <dest_ip> -p <port> [-o <pcap>] [--log <file>] [-q]\n", argv[0]);
-        return 1;
-    }
-    
-    // Validate destination IP format
-    struct in_addr addr_check;
-    if (inet_pton(AF_INET, dest_ip, &addr_check) != 1) {
-        fprintf(stderr, "Error: Destination must be a valid IPv4 address.\n");
+    // Show help if no arguments provided
+    if (argc < 2) {
+#ifdef ENABLE_DNS
+        fprintf(stderr, "Usage: %s -l <port> -d <host> -p <port> [-b <bind_ip>] [-o <pcap>] [--log <file>] [-q]\n", argv[0]);
+#else
+        fprintf(stderr, "Usage: %s -l <port> -d <dest_ip> -p <port> [-b <bind_ip>] [-o <pcap>] [--log <file>] [-q]\n", argv[0]);
+#endif
         return 1;
     }
 
-    // Create wakeup pipe
-    if (pipe(wakeup_pipe) == -1) {
-        perror("Pipe failed");
+    for (int i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "-l") == 0 && i + 1 < argc) {
+            listen_port = atoi(argv[++i]);
+        } else if (strcmp(argv[i], "-d") == 0 && i + 1 < argc) {
+            dest_host = argv[++i];
+        } else if (strcmp(argv[i], "-p") == 0 && i + 1 < argc) {
+            dest_port = atoi(argv[++i]);
+        } else if (strcmp(argv[i], "-o") == 0 && i + 1 < argc) {
+            output_file = argv[++i];
+        } else if (strcmp(argv[i], "--log") == 0 && i + 1 < argc) {
+            log_file = argv[++i];
+        } else if (strcmp(argv[i], "-b") == 0 && i + 1 < argc) {
+            listen_host = argv[++i];
+        } else if (strcmp(argv[i], "-q") == 0) {
+            quiet = 1;
+        } else {
+            // Unknown parameter
+            fprintf(stderr, "Error: Unknown parameter '%s'\n", argv[i]);
+#ifdef ENABLE_DNS
+            fprintf(stderr, "Usage: %s -l <port> -d <host> -p <port> [-b <bind_ip>] [-o <pcap>] [--log <file>] [-q]\n", argv[0]);
+#else
+            fprintf(stderr, "Usage: %s -l <port> -d <dest_ip> -p <port> [-b <bind_ip>] [-o <pcap>] [--log <file>] [-q]\n", argv[0]);
+#endif
+            return 1;
+        }
+    }
+    
+    if (!listen_port || !dest_host || !dest_port) {
+        fprintf(stderr, "Error: Missing required arguments (-l, -d, -p)\n");
+#ifdef ENABLE_DNS
+        fprintf(stderr, "Usage: %s -l <port> -d <host> -p <port> [-b <bind_ip>] [-o <pcap>] [--log <file>] [-q]\n", argv[0]);
+#else
+        fprintf(stderr, "Usage: %s -l <port> -d <dest_ip> -p <port> [-b <bind_ip>] [-o <pcap>] [--log <file>] [-q]\n", argv[0]);
+#endif
         return 1;
     }
-    // Set read end to non-blocking
-    fcntl(wakeup_pipe[0], F_SETFL, O_NONBLOCK);
+
+#ifndef ENABLE_DNS
+    // Validate destination IP format if DNS is disabled
+    struct in_addr addr_check;
+    if (inet_pton(AF_INET, dest_host, &addr_check) != 1) {
+        fprintf(stderr, "Error: Destination must be a valid IPv4 address in this build.\n");
+        return 1;
+    }
+#endif
 
     signal(SIGINT, handle_signal);
     signal(SIGTERM, handle_signal);
@@ -487,7 +542,7 @@ int main(int argc, char *argv[]) {
     
     if (!quiet) {
         printf("[*] shadowport v%s started\n", VERSION);
-        printf("[*] Listening on %s:%d -> %s:%d\n", listen_host, listen_port, dest_ip, dest_port);
+        printf("[*] Listening on %s:%d -> %s:%d\n", listen_host, listen_port, dest_host, dest_port);
         printf("[*] Press Ctrl+C to stop\n");
     }
     
@@ -523,14 +578,11 @@ int main(int argc, char *argv[]) {
         
         FD_ZERO(&readfds);
         FD_SET(server_fd, &readfds);
-        FD_SET(wakeup_pipe[0], &readfds);
-        
-        int max_fd = server_fd > wakeup_pipe[0] ? server_fd : wakeup_pipe[0];
         
         timeout.tv_sec = 1;
         timeout.tv_usec = 0;
         
-        int activity = select(max_fd + 1, &readfds, NULL, NULL, &timeout);
+        int activity = select(server_fd + 1, &readfds, NULL, NULL, &timeout);
         
         if (activity < 0) {
             if (errno == EINTR) continue;
@@ -538,21 +590,14 @@ int main(int argc, char *argv[]) {
             break;
         }
         
-        // Check wakeup pipe
-        if (FD_ISSET(wakeup_pipe[0], &readfds)) {
-            char buf[10];
-            read(wakeup_pipe[0], buf, sizeof(buf));
-            if (!running) break;
-        }
-        
-        if (FD_ISSET(server_fd, &readfds)) {
+        if (activity > 0 && FD_ISSET(server_fd, &readfds)) {
             struct sockaddr_in client_addr;
             socklen_t client_len = sizeof(client_addr);
             
             int client_fd = accept(server_fd, (struct sockaddr *)&client_addr, &client_len);
             
             if (client_fd >= 0) {
-                handle_client(client_fd, &client_addr, dest_ip, dest_port, output_file, log_file);
+                handle_client(client_fd, &client_addr, dest_host, dest_port, output_file, log_file);
             } else if (errno != EAGAIN && errno != EWOULDBLOCK) {
                 perror("Accept failed");
                 break;
@@ -561,8 +606,6 @@ int main(int argc, char *argv[]) {
     }
     
     close(server_fd);
-    close(wakeup_pipe[0]);
-    close(wakeup_pipe[1]);
     if (pcap_file) fclose(pcap_file);
     if (meta_file) fclose(meta_file);
     if (!quiet) printf("[*] shadowport stopped\n");
