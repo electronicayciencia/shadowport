@@ -67,3 +67,23 @@ jobs:
       with:
         name: shadowport-armv7
         path: shadowport-armv7
+
+  build-windows:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Install MinGW-w64
+      run: sudo apt-get update && sudo apt-get install -y gcc-mingw-w64
+
+    - name: Compile Static Binary (Windows x64)
+      run: |
+        x86_64-w64-mingw32-gcc -static -o shadowport-win64.exe shadowport.c -O2 -lws2_32
+        echo "Binary size: $(du -h shadowport-win64.exe | cut -f1)"
+
+    - name: Upload Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: shadowport-win64
+        path: shadowport-win64.exe
