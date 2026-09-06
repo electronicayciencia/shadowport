@@ -39,7 +39,7 @@ python shadowport.py -l <local_port> -d <dest_host> -p <dest_port> [options]
 | `--dest-port` | `-p` | Destination port. | Yes |
 | `--output` | `-o` | Output PCAP file path. Default: `shadowport.pcap`. | No |
 | `--log` | | Path for metadata log file. If omitted, no log is created. | No |
-| `--listen-host` | | Local bind address. Default: `127.0.0.1`. | No |
+| `--bind-host` |  `-b` | Local bind address. Default: `127.0.0.1`. | No |
 | `--quiet` | `-q` | Run silently. Suppresses console output. | No |
 
 ## Examples
@@ -109,11 +109,35 @@ Connect using `openssl` and specify the Server Name Indication (SNI) via the `-s
 openssl s_client -connect 127.0.0.1:8443 -servername example.com
 ```
 
-Note: The PCAP will capture the Client Hello, Server Hello, Certificate exchange, and Key Exchange messages, allowing you to debug TLS configuration issues. But the traffic will remain encrypted.
+Note the PCAP will capture the Client Hello, Server Hello, Certificate exchange, and Key Exchange messages. So you can debug TLS issues. But the traffic will remain encrypted.
+
+
+### 6. Inter-Host Traffic Capture (Man-in-the-Middle)
+
+Use `shadowport` on a third host to intercept and log traffic between two different machines. Requires binding to `0.0.0.0` so the tunnel is accessible from the network.
+
+- Host A (Client) on `192.168.1.10`
+- Host B (Shadowport) on `192.168.1.50`
+- Host C (Server) on `192.168.1.100`
+
+Start *shadowport* listening on all interfaces an pointing to the target server:
+
+```bash
+python shadowport.py -l 8080 -d 192.168.1.100 -p 80 -b 0.0.0.0 -o inter_host.pcap
+```
+
+Configure your application on host A to connect to host B (and *shadowport* listening port)  instead of the actual server:
+
+```bash
+curl http://192.168.1.50:8080
+```
+
+All traffic between host A and host C will now pass through host B, where it is forwarded and logged.
+
 
 ## C Implementation
 
-A standalone C version is available for environments without Python. It provides identical functionality with lower resource usage and no runtime dependencies.
+Standalone C version for environments without Python.
 
 ### Compilation
 
@@ -123,17 +147,31 @@ Compile the source code into a static binary:
 gcc -static -o shadowport shadowport.c -O2
 ```
 
+Glibc does not support DNS in static compiled binaries.
+
+Use musl for a smaller binary and host name resolution:
+
+```bash
+# Install musl tools (Debian/Ubuntu/Raspbian)
+sudo apt-get install musl-tools
+
+# Compile
+musl-gcc -static -DENABLE_DNS -o shadowport shadowport.c -O2
+```
+
 ### Usage
 
-Same as Python version, but the destination must be an IPv4 address. 
+Same as Python version:
+
+```bash
+./shadowport -l <port> -d <host> -p <port> [-b <bind_ip>] [-o <pcap>] [--log <file>] [-q]
+```
+
+Example:
 
 ```bash
 ./shadowport -l 8080 -d 192.168.1.100 -p 80 -o capture.pcap
 ```
-
-Hostname resolution and static linking do not work well together:
-
-> warning: Using 'getaddrinfo' in statically linked applications requires at runtime the shared libraries from the glibc version used for linking
 
 
 ## Limitations
