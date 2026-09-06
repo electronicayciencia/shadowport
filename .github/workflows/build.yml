@@ -103,9 +103,9 @@ jobs:
             gh release delete latest --yes --cleanup-tag
           fi
 
-          # Create a fresh "latest" release
+          # Create a fresh "latest" release and publish it
           echo "Creating new 'latest' release..."
-          gh release create latest --title "Latest Build" --notes "Automated build from master branch." --prerelease
+          gh release create latest --title "Latest Build" --notes "Automated build from master branch." --latest
 
           # Upload all assets
           echo "Uploading shadowport-linux-x64..."
