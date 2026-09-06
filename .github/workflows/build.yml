@@ -8,44 +8,85 @@ on:
   workflow_dispatch:
 
 jobs:
-  build:
+  build-linux-x64:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        include:
-          - arch: linux-x64
-            image: alpine:latest
-            cc: gcc
-            flags: -static -DENABLE_DNS
-          - arch: linux-x86
-            image: i386/alpine:latest
-            cc: gcc
-            flags: -static -DENABLE_DNS
-          - arch: linux-armv5
-            image: arm32v5/alpine:latest
-            cc: gcc
-            flags: -static -DENABLE_DNS
-          - arch: linux-armv7
-            image: arm32v7/alpine:latest
-            cc: gcc
-            flags: -static -DENABLE_DNS
-
-    container: ${{ matrix.image }}
-
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
 
-    - name: Install build dependencies
-      run: apk add --no-cache gcc musl-dev make
+    - name: Install musl-tools
+      run: sudo apt-get update && sudo apt-get install -y musl-tools
 
-    - name: Compile Static Binary
+    - name: Compile Static Binary (x64)
       run: |
-        ${{ matrix.cc }} ${{ matrix.flags }} -o shadowport-${{ matrix.arch }} shadowport.c -O2
-        echo "Binary size: $(du -h shadowport-${{ matrix.arch }} | cut -f1)"
+        musl-gcc -static -DENABLE_DNS -o shadowport-linux-x64 shadowport.c -O2
+        echo "Binary size: $(du -h shadowport-linux-x64 | cut -f1)"
 
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: shadowport-${{ matrix.arch }}
-        path: shadowport-${{ matrix.arch }}
+        name: shadowport-linux-x64
+        path: shadowport-linux-x64
+
+  build-linux-x86:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Install cross-compile tools
+      run: sudo apt-get update && sudo apt-get install -y musl-tools gcc-i686-linux-gnu
+
+    - name: Compile Static Binary (x86 32-bit)
+      run: |
+        # Use i686-linux-gnu-gcc with musl static linking
+        i686-linux-gnu-gcc -static -DENABLE_DNS -o shadowport-linux-x86 shadowport.c -O2
+        echo "Binary size: $(du -h shadowport-linux-x86 | cut -f1)"
+
+    - name: Upload Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: shadowport-linux-x86
+        path: shadowport-linux-x86
+
+  build-armv5:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Install cross-compile tools
+      run: sudo apt-get update && sudo apt-get install -y gcc-arm-linux-gnueabi
+
+    - name: Compile Static Binary (ARMv5)
+      run: |
+        # ARMv5 uses soft-float (gnueabi)
+        arm-linux-gnueabi-gcc -static -DENABLE_DNS -o shadowport-armv5 shadowport.c -O2
+        echo "Binary size: $(du -h shadowport-armv5 | cut -f1)"
+
+    - name: Upload Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: shadowport-armv5
+        path: shadowport-armv5
+
+  build-armv7:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Install cross-compile tools
+      run: sudo apt-get update && sudo apt-get install -y gcc-arm-linux-gnueabihf
+
+    - name: Compile Static Binary (ARMv7)
+      run: |
+        # ARMv7 usually uses hard-float (gnueabihf)
+        arm-linux-gnueabihf-gcc -static -DENABLE_DNS -o shadowport-armv7 shadowport.c -O2
+        echo "Binary size: $(du -h shadowport-armv7 | cut -f1)"
+
+    - name: Upload Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: shadowport-armv7
+        path: shadowport-armv7
