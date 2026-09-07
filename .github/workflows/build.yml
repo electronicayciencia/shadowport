@@ -79,7 +79,7 @@ jobs:
 
     - name: Compile Dynamic Binary (macOS x64 with DNS)
       run: |
-        clang -DENABLE_DNS -o shadowport-macos-x64 shadowport.c -O2
+        clang -arch x86_64 -DENABLE_DNS -o shadowport-macos-x64 shadowport.c -O2
         echo "Binary info: $(file shadowport-macos-x64)"
 
     - name: Upload Artifact
