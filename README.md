@@ -138,7 +138,7 @@ All traffic between host A and host C will now pass through host B, where it is 
 
 ## C Implementation
 
-Standalone C version for environments without Python.
+Standalone C version for POSIX environments without Python.
 
 ### Compilation
 
@@ -148,9 +148,15 @@ Compile the source code into a static binary:
 gcc -static -o shadowport shadowport.c -O2
 ```
 
-Glibc does not support DNS in static compiled binaries.
+Name resolution is disabled by default because Glibc NSS does not support static compilation.
 
-Use musl for a smaller binary and host name resolution:
+To enable it use `-DENABLE_DNS`:
+
+```bash
+gcc -DENABLE_DNS -o shadowport shadowport.c -O2
+```
+
+Musl does support static and name resolution:
 
 ```bash
 # Install musl tools (Debian/Ubuntu/Raspbian)
@@ -160,12 +166,30 @@ sudo apt-get install musl-tools
 musl-gcc -static -DENABLE_DNS -o shadowport shadowport.c -O2
 ```
 
+For MacOS (dynamic, DNS enabled):
+
+```bash
+clang -DENABLE_DNS -o shadowport shadowport.c -O2
+```
+
 ### Usage
 
 Same as Python version:
 
 ```bash
-./shadowport -l <port> -d <host> -p <port> [-b <bind_ip>] [-o <pcap>] [--log <file>] [-q]
+Usage: ./shadowport -l <port> -d <dest> -p <port> [options]
+
+Required Arguments:
+  -l <port>       Local port to listen on.
+  -d <ip>         Destination IPv4 address.
+  -p <port>       Destination port.
+
+Optional Arguments:
+  -b <ip>         Bind address. Default: 127.0.0.1.
+  -o <file>       Output PCAP file. Default: shadowport.pcap.
+  --log <file>    Metadata log file (CSV format).
+  -q              Quiet mode (suppress console output).
+  -h              Show this help message.
 ```
 
 Example:
@@ -174,20 +198,25 @@ Example:
 ./shadowport -l 8080 -d 192.168.1.100 -p 80 -o capture.pcap
 ```
 
+
 ## Pre-compiled Binaries
 
 Go to the Releases page.
 
-Note: ARM builds do not support hostname resolution.
+Note: Static ARM builds do not support hostname resolution. MacOS builds are not statically linked.
 
 
 ## Limitations
 
-- Control flags (RST, FIN, ACK) are logged to match the connection state. 
-- The Ethernet, IP, and TCP headers are synthetic. They use correct sequence numbers for Wireshark physical details like TTL or MAC addresses are fake.
+- Control flags (RST, FIN, ACK) are logged to match the connection state, but not captured on the wire.
+- The Ethernet, IP, and TCP headers are synthetic. Physical details like TTL or MAC addresses are fake.
 - Each instance handles one client connection at a time.
 - UDP traffic not supported.
 
 ## License
 
 This project is provided as is for educational and debugging purposes.
+
+## Acknowledgments
+
+Developed with the assistance of Qwen AI.

@@ -7,7 +7,6 @@ on:
     branches: [ "master" ]
   workflow_dispatch:
 
-# Grant write permissions for the GITHUB_TOKEN
 permissions:
   contents: write
 
@@ -72,8 +71,42 @@ jobs:
         name: shadowport-armv7
         path: shadowport-armv7
 
+  build-macos-x64:
+    runs-on: macos-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Compile Dynamic Binary (macOS x64 with DNS)
+      run: |
+        clang -DENABLE_DNS -o shadowport-macos-x64 shadowport.c -O2
+        echo "Binary info: $(file shadowport-macos-x64)"
+
+    - name: Upload Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: shadowport-macos-x64
+        path: shadowport-macos-x64
+
+  build-macos-arm64:
+    runs-on: macos-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Compile Dynamic Binary (macOS ARM64 with DNS)
+      run: |
+        clang -arch arm64 -DENABLE_DNS -o shadowport-macos-arm64 shadowport.c -O2
+        echo "Binary info: $(file shadowport-macos-arm64)"
+
+    - name: Upload Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: shadowport-macos-arm64
+        path: shadowport-macos-arm64
+
   update-release:
-    needs: [build-linux-x64, build-armv5, build-armv7]
+    needs: [build-linux-x64, build-armv5, build-armv7, build-macos-x64, build-macos-arm64]
     runs-on: ubuntu-latest
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     steps:
@@ -86,6 +119,8 @@ jobs:
           cp shadowport-linux-x64/shadowport-linux-x64 release-staging/
           cp shadowport-armv5/shadowport-armv5 release-staging/
           cp shadowport-armv7/shadowport-armv7 release-staging/
+          cp shadowport-macos-x64/shadowport-macos-x64 release-staging/
+          cp shadowport-macos-arm64/shadowport-macos-arm64 release-staging/
           chmod +x release-staging/shadowport-*
           ls -lh release-staging/
 
@@ -96,18 +131,15 @@ jobs:
         run: |
           cd release-staging
           
-          # Check if "latest" release exists and delete it if it does
           RELEASE_ID=$(gh release view latest --json id --jq '.id' 2>/dev/null || echo "")
           if [ ! -z "$RELEASE_ID" ]; then
             echo "Deleting existing 'latest' release..."
             gh release delete latest --yes --cleanup-tag
           fi
 
-          # Create a fresh "latest" release and publish it
           echo "Creating new 'latest' release..."
           gh release create latest --title "Latest Build" --notes "Automated build from master branch." --latest
 
-          # Upload all assets
           echo "Uploading shadowport-linux-x64..."
           gh release upload latest shadowport-linux-x64
           
@@ -116,3 +148,9 @@ jobs:
           
           echo "Uploading shadowport-armv7..."
           gh release upload latest shadowport-armv7
+
+          echo "Uploading shadowport-macos-x64..."
+          gh release upload latest shadowport-macos-x64
+          
+          echo "Uploading shadowport-macos-arm64..."
+          gh release upload latest shadowport-macos-arm64
