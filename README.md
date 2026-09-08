@@ -1,15 +1,14 @@
 # Shadow Port
 
-User-space TCP packet capture tool. 
+**Shadowport** is a user-space TCP packet capture tool. 
 
-shadowport is a transparent TCP capturing tunnel. It allows you to log traffic from/to one port to a PCAP file without root access.
+It acts as a transparent proxy, forwarding traffic from a local port to a remote destination while logging the TCP payload to a PCAP file for Wireshark analysis. It requires no root privileges.
 
 Python and C implementations available. Standalone, no installation, single file, no dependencies.
 
-
 ## Usage
 
-Configure shadowport to listen on a local port and forward traffic to the target server.
+Configure shadowport to listen on a local port and forward packets to the target server.
 
 ```text
    Client App             Shadowport                Server
@@ -201,16 +200,18 @@ Example:
 
 ## Pre-compiled Binaries
 
-Go to the Releases page.
+You can find pre-compiled binaries for Linux, macOS, and Windows in the **Releases** page.
+
+Linux & macOS are build from the C version. Windows is compiled from the Python script.
 
 Note: Static ARM builds do not support hostname resolution. MacOS builds are not statically linked.
 
 
-## Limitations
+## Software limitations
 
 - Control flags (RST, FIN, ACK) are logged to match the connection state, but not captured on the wire.
 - The Ethernet, IP, and TCP headers are synthetic. Physical details like TTL or MAC addresses are fake.
-- Each instance handles one client connection at a time.
+- Single thread. Concurrent client connections are not supported.
 - UDP traffic not supported.
 
 ## License

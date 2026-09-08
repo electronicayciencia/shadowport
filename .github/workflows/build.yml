@@ -105,8 +105,31 @@ jobs:
         name: shadowport-macos-arm64
         path: shadowport-macos-arm64
 
+  build-windows-x64:
+    runs-on: windows-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.x'
+
+    - name: Install PyInstaller
+      run: pip install pyinstaller
+
+    - name: Compile Windows Executable
+      run: pyinstaller --onefile --console --name shadowport-windows-x64 shadowport.py
+
+    - name: Upload Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: shadowport-windows-x64
+        path: dist/shadowport-windows-x64.exe
+
   update-release:
-    needs: [build-linux-x64, build-armv5, build-armv7, build-macos-x64, build-macos-arm64]
+    needs: [build-linux-x64, build-armv5, build-armv7, build-macos-x64, build-macos-arm64, build-windows-x64]
     runs-on: ubuntu-latest
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     steps:
@@ -121,7 +144,8 @@ jobs:
           cp shadowport-armv7/shadowport-armv7 release-staging/
           cp shadowport-macos-x64/shadowport-macos-x64 release-staging/
           cp shadowport-macos-arm64/shadowport-macos-arm64 release-staging/
-          chmod +x release-staging/shadowport-*
+          cp shadowport-windows-x64/shadowport-windows-x64.exe release-staging/
+          chmod +x release-staging/shadowport-linux-* release-staging/shadowport-arm* release-staging/shadowport-macos-*
           ls -lh release-staging/
 
       - name: Recreate "latest" Release
@@ -154,3 +178,6 @@ jobs:
           
           echo "Uploading shadowport-macos-arm64..."
           gh release upload latest shadowport-macos-arm64
+
+          echo "Uploading shadowport-windows-x64..."
+          gh release upload latest shadowport-windows-x64.exe
